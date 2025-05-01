@@ -1,3 +1,4 @@
+
 "use client"
 
 import * as React from "react"
@@ -5,7 +6,7 @@ import { Slot } from "@radix-ui/react-slot"
 import { VariantProps, cva } from "class-variance-authority"
 import { PanelLeft } from "lucide-react"
 
-import { useIsMobile } from "@/hooks/use-mobile"
+import { useIsMobile } from "@/hooks/use-mobile" // Correct path
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -32,7 +33,7 @@ type SidebarContext = {
   setOpen: (open: boolean) => void
   openMobile: boolean
   setOpenMobile: (open: boolean) => void
-  isMobile: boolean
+  isMobile: boolean | undefined // Allow undefined initially
   toggleSidebar: () => void
 }
 
@@ -72,8 +73,20 @@ const SidebarProvider = React.forwardRef<
 
     // This is the internal state of the sidebar.
     // We use openProp and setOpenProp for control from outside the component.
-    const [_open, _setOpen] = React.useState(defaultOpen)
+    const [_open, _setOpen] = React.useState(() => {
+       // Read initial state from cookie only on client
+       if (typeof window !== 'undefined') {
+         const cookieValue = document.cookie
+           .split('; ')
+           .find(row => row.startsWith(`${SIDEBAR_COOKIE_NAME}=`))
+           ?.split('=')[1];
+         return cookieValue === 'true' ? true : (cookieValue === 'false' ? false : defaultOpen);
+       }
+       return defaultOpen;
+    });
+
     const open = openProp ?? _open
+
     const setOpen = React.useCallback(
       (value: boolean | ((value: boolean) => boolean)) => {
         const openState = typeof value === "function" ? value(open) : value
@@ -91,6 +104,9 @@ const SidebarProvider = React.forwardRef<
 
     // Helper to toggle the sidebar.
     const toggleSidebar = React.useCallback(() => {
+      // Check if isMobile is defined before using it
+      if (isMobile === undefined) return; // Don't do anything if not determined yet
+
       return isMobile
         ? setOpenMobile((open) => !open)
         : setOpen((open) => !open)
@@ -121,7 +137,7 @@ const SidebarProvider = React.forwardRef<
         state,
         open,
         setOpen,
-        isMobile,
+        isMobile, // Pass the potentially undefined value
         openMobile,
         setOpenMobile,
         toggleSidebar,
@@ -176,21 +192,53 @@ const Sidebar = React.forwardRef<
     ref
   ) => {
     const { isMobile, state, openMobile, setOpenMobile } = useSidebar()
+    const [mounted, setMounted] = React.useState(false);
+
+    React.useEffect(() => {
+        setMounted(true);
+    }, []);
+
+
+    // Render nothing or a placeholder on the server/before hydration
+    if (!mounted || isMobile === undefined) {
+       // Option 1: Render nothing (might cause layout shift)
+       // return null;
+       // Option 2: Render a placeholder/skeleton
+        return (
+          <div className={cn(
+             "hidden md:block", // Hide on mobile initially
+             collapsible === 'none' ? 'w-[--sidebar-width]' : (collapsible === 'icon' ? 'w-[--sidebar-width-icon]' : 'w-0'),
+              className
+          )} style={
+              {
+                "--sidebar-width": SIDEBAR_WIDTH,
+                "--sidebar-width-icon": SIDEBAR_WIDTH_ICON,
+              } as React.CSSProperties
+            } >
+             {/* Basic Skeleton */}
+             <div className="h-full bg-muted animate-pulse"></div>
+          </div>
+        );
+    }
+
 
     if (collapsible === "none") {
-      return (
-        <div
-          className={cn(
-            "flex h-full w-[--sidebar-width] flex-col bg-sidebar text-sidebar-foreground",
-            className
-          )}
-          ref={ref}
-          {...props}
-        >
-          {children}
-        </div>
-      )
+      // Always render this variant if collapsible is none, regardless of mobile status after mount
+       return (
+         <div
+           className={cn(
+             "flex h-full w-[--sidebar-width] flex-col bg-sidebar text-sidebar-foreground",
+             isMobile ? 'hidden' : 'flex', // Still hide if mobile, show if desktop
+             className
+           )}
+           ref={ref}
+           {...props}
+         >
+           {children}
+         </div>
+       );
     }
+
 
     if (isMobile) {
       return (
@@ -212,10 +260,11 @@ const Sidebar = React.forwardRef<
       )
     }
 
+    // Desktop view (isMobile is false and mounted is true)
     return (
       <div
         ref={ref}
-        className="group peer hidden md:block text-sidebar-foreground"
+        className="group peer hidden md:block text-sidebar-foreground" // Keep hidden md:block
         data-state={state}
         data-collapsible={state === "collapsed" ? collapsible : ""}
         data-variant={variant}
@@ -234,7 +283,7 @@ const Sidebar = React.forwardRef<
         />
         <div
           className={cn(
-            "duration-200 fixed inset-y-0 z-10 hidden h-svh w-[--sidebar-width] transition-[left,right,width] ease-linear md:flex",
+            "duration-200 fixed inset-y-0 z-10 hidden h-svh w-[--sidebar-width] transition-[left,right,width] ease-linear md:flex", // Keep md:flex
             side === "left"
               ? "left-0 group-data-[collapsible=offcanvas]:left-[calc(var(--sidebar-width)*-1)]"
               : "right-0 group-data-[collapsible=offcanvas]:right-[calc(var(--sidebar-width)*-1)]",
@@ -577,13 +626,16 @@ const SidebarMenuButton = React.forwardRef<
       }
     }
 
+    // Only show tooltip when collapsed and not mobile (after hydration)
+    const showTooltip = state === "collapsed" && isMobile === false;
+
     return (
       <Tooltip>
         <TooltipTrigger asChild>{button}</TooltipTrigger>
         <TooltipContent
           side="right"
           align="center"
-          hidden={state !== "collapsed" || isMobile}
+          hidden={!showTooltip} // Use derived state
           {...tooltip}
         />
       </Tooltip>
@@ -650,10 +702,13 @@ const SidebarMenuSkeleton = React.forwardRef<
     showIcon?: boolean
   }
 >(({ className, showIcon = false, ...props }, ref) => {
-  // Random width between 50 to 90%.
-  const width = React.useMemo(() => {
-    return `${Math.floor(Math.random() * 40) + 50}%`
-  }, [])
+  // Random width calculation now safe inside useEffect or useMemo after mount
+  const [width, setWidth] = React.useState('70%'); // Default width
+
+  React.useEffect(() => {
+    // Calculate random width only on the client after mount
+     setWidth(`${Math.floor(Math.random() * 40) + 50}%`);
+  }, []);
 
   return (
     <div
@@ -761,3 +816,4 @@ export {
   SidebarTrigger,
   useSidebar,
 }
+        
