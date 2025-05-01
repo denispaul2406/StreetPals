@@ -2,19 +2,14 @@ import type { Metadata } from 'next';
 import { Inter } from 'next/font/google'; // Use Inter font as requested
 import './globals.css';
 import { cn } from '@/lib/utils';
-import Header from '@/components/layout/header';
+// import Header from '@/components/layout/header'; // Removed Header
+import BottomNavbar from '@/components/layout/bottom-navbar'; // Added BottomNavbar
 import { Toaster } from '@/components/ui/toaster';
 
 const inter = Inter({
   subsets: ['latin'],
   variable: '--font-geist-sans', // Keep variable name for potential compatibility if Geist was used elsewhere, but font is Inter
 });
-
-// Remove Geist Mono as it's not specified
-// const geistMono = Geist_Mono({
-//   variable: '--font-geist-mono',
-//   subsets: ['latin'],
-// });
 
 export const metadata: Metadata = {
   title: 'StreetPals',
@@ -32,15 +27,16 @@ export default function RootLayout({
         className={cn(
           'min-h-screen bg-background font-sans antialiased',
           inter.variable // Apply Inter font variable
-          // geistMono.variable // Remove Mono font variable
         )}
       >
-        <div className="relative flex min-h-screen flex-col">
-          <Header />
-          <main className="flex-1 container mx-auto px-4 py-8">
+        {/* Add pb-16 to account for the fixed bottom navbar height */}
+        <div className="relative flex min-h-screen flex-col pb-16">
+          {/* <Header /> */} {/* Header removed */}
+          {/* Adjust padding for mobile view */}
+          <main className="flex-1 container mx-auto px-4 py-6 sm:px-6 sm:py-8">
             {children}
           </main>
-          {/* Add a simple footer later if needed */}
+          <BottomNavbar /> {/* Added Bottom Navbar */}
         </div>
         <Toaster />
       </body>
